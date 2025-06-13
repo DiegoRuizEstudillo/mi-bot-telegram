@@ -3,7 +3,7 @@ import datetime
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 
-TOKEN = "7575043402:AAH4f_bW-jXXY19JGqqJ1G81_TZU9JEzNeU"
+TOKEN = "8061146251:AAGoiu1mx1rWsxUb_Ljyy2-qF4jiiQvkUQU"
 ARCHIVO_TAREAS = "tareas.csv"
 
 # Prioridades válidas
