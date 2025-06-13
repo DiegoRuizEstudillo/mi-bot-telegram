@@ -1,167 +1,156 @@
 import csv
 import datetime
+import schedule
+import asyncio
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 
 TOKEN = "8061146251:AAGoiu1mx1rWsxUb_Ljyy2-qF4jiiQvkUQU"
-ARCHIVO_TAREAS = "tareas.csv"
-
-# Prioridades válidas
-PRIORIDADES = ["baja", "media", "alta"]
+ADMIN_ID = 5844318309
+ARCHIVO_CLIENTES = "clientes.csv"
+ARCHIVO_EXPORTACION = "clientes_exportados.txt"
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     mensaje = (
-        "👋 Hola, este bot te ayudará a gestionar tus tareas.\n\n"
+        "👋 Hola, este bot te ayudará a recordar los cobros mensuales.\n\n"
         "📌 Comandos disponibles:\n"
-        "/agregar TAREA | PRIORIDAD | YYYY-MM-DD | ETIQUETA,CATEGORIA - Agrega una tarea\n"
-        "/listar - Lista todas las tareas\n"
-        "/eliminar ID - Elimina una tarea por su ID\n"
-        "/actualizar ID | campo | nuevo_valor - Actualiza un campo (tarea, prioridad, fecha, etiquetas)\n"
-        "/ayuda - Muestra este mensaje\n\n"
-        "Ejemplo para agregar:\n"
-        "/agregar Comprar libro | alta | 2025-06-15 | lectura,personal"
+        "/agregar Nombre completo YYYY-MM-DD - Agrega un cliente con fecha de instalación\n"
+        "/clientes - Lista los clientes registrados\n"
+        "/eliminar Nombre - Elimina un cliente por nombre\n"
+        "/actualizar Nombre YYYY-MM-DD - Actualiza la fecha de un cliente\n"
+        "/exportar - Exporta la lista de clientes a un archivo .txt\n"
+        "/ayuda - Muestra este mensaje de ayuda\n"
     )
     await update.message.reply_text(mensaje)
 
 async def ayuda(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await start(update, context)
-
-def cargar_tareas():
-    tareas = []
-    try:
-        with open(ARCHIVO_TAREAS, "r", newline="", encoding="utf-8") as f:
-            reader = csv.DictReader(f)
-            tareas = list(reader)
-    except FileNotFoundError:
-        pass
-    return tareas
-
-def guardar_tareas(tareas):
-    with open(ARCHIVO_TAREAS, "w", newline="", encoding="utf-8") as f:
-        fieldnames = ["id", "tarea", "prioridad", "fecha", "etiquetas"]
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
-        writer.writeheader()
-        writer.writerows(tareas)
-
-def generar_id(tareas):
-    if not tareas:
-        return "1"
-    ids = [int(t["id"]) for t in tareas]
-    return str(max(ids) + 1)
+    await start(update, context)  # Reusar el mensaje de start
 
 async def agregar(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    texto = update.message.text.partition(" ")[2].strip()
-    partes = [p.strip() for p in texto.split("|")]
-    if len(partes) != 4:
-        await update.message.reply_text("⚠ Usa el formato:\n/agregar TAREA | PRIORIDAD | YYYY-MM-DD | ETIQUETA,CATEGORIA")
+    if len(context.args) < 2:
+        await update.message.reply_text("⚠ Usa el formato: /agregar Nombre completo YYYY-MM-DD")
         return
-
-    tarea, prioridad, fecha_str, etiquetas = partes
-
-    if prioridad.lower() not in PRIORIDADES:
-        await update.message.reply_text(f"⚠ Prioridad inválida. Usa: {', '.join(PRIORIDADES)}")
-        return
-
+    fecha = context.args[-1]
+    nombre = " ".join(context.args[:-1])
     try:
-        fecha = datetime.datetime.strptime(fecha_str, "%Y-%m-%d").date()
+        datetime.datetime.strptime(fecha, "%Y-%m-%d")
+        with open(ARCHIVO_CLIENTES, "a", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerow([nombre, fecha])
+        await update.message.reply_text(f"✅ Cliente '{nombre}' agregado con fecha {fecha}.")
+    except ValueError:
+        await update.message.reply_text("⚠ La fecha debe estar en formato YYYY-MM-DD")
+
+async def clientes(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        with open(ARCHIVO_CLIENTES, "r") as f:
+            reader = csv.reader(f)
+            mensaje = "📋 Clientes registrados:\n"
+            for row in reader:
+                mensaje += f"- {row[0]} (instalado el {row[1]})\n"
+        await update.message.reply_text(mensaje)
+    except FileNotFoundError:
+        await update.message.reply_text("⚠ No hay clientes registrados todavía.")
+
+async def eliminar(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not context.args:
+        await update.message.reply_text("⚠ Usa el formato: /eliminar Nombre")
+        return
+    nombre_a_eliminar = " ".join(context.args)
+    try:
+        clientes = []
+        eliminado = False
+        with open(ARCHIVO_CLIENTES, "r") as f:
+            reader = csv.reader(f)
+            for row in reader:
+                if row[0].lower() != nombre_a_eliminar.lower():
+                    clientes.append(row)
+                else:
+                    eliminado = True
+        if eliminado:
+            with open(ARCHIVO_CLIENTES, "w", newline="") as f:
+                writer = csv.writer(f)
+                writer.writerows(clientes)
+            await update.message.reply_text(f"🗑 Cliente '{nombre_a_eliminar}' eliminado.")
+        else:
+            await update.message.reply_text(f"⚠ No se encontró cliente con el nombre '{nombre_a_eliminar}'.")
+    except FileNotFoundError:
+        await update.message.reply_text("⚠ No hay clientes registrados todavía.")
+
+async def actualizar(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if len(context.args) < 2:
+        await update.message.reply_text("⚠ Usa el formato: /actualizar Nombre YYYY-MM-DD")
+        return
+    nueva_fecha = context.args[-1]
+    nombre_a_actualizar = " ".join(context.args[:-1])
+    try:
+        datetime.datetime.strptime(nueva_fecha, "%Y-%m-%d")
     except ValueError:
         await update.message.reply_text("⚠ La fecha debe estar en formato YYYY-MM-DD")
         return
 
-    etiquetas = etiquetas.replace(" ", "")
-    etiquetas_lista = etiquetas.split(",") if etiquetas else []
+    try:
+        clientes = []
+        encontrado = False
+        with open(ARCHIVO_CLIENTES, "r") as f:
+            reader = csv.reader(f)
+            for row in reader:
+                if row[0].lower() == nombre_a_actualizar.lower():
+                    clientes.append([row[0], nueva_fecha])
+                    encontrado = True
+                else:
+                    clientes.append(row)
+        if encontrado:
+            with open(ARCHIVO_CLIENTES, "w", newline="") as f:
+                writer = csv.writer(f)
+                writer.writerows(clientes)
+            await update.message.reply_text(f"✅ Fecha del cliente '{nombre_a_actualizar}' actualizada a {nueva_fecha}.")
+        else:
+            await update.message.reply_text(f"⚠ No se encontró cliente con el nombre '{nombre_a_actualizar}'.")
+    except FileNotFoundError:
+        await update.message.reply_text("⚠ No hay clientes registrados todavía.")
 
-    tareas = cargar_tareas()
-    nueva_tarea = {
-        "id": generar_id(tareas),
-        "tarea": tarea,
-        "prioridad": prioridad.lower(),
-        "fecha": fecha_str,
-        "etiquetas": ",".join(etiquetas_lista),
-    }
-    tareas.append(nueva_tarea)
-    guardar_tareas(tareas)
+async def exportar(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        with open(ARCHIVO_CLIENTES, "r") as f:
+            reader = csv.reader(f)
+            with open(ARCHIVO_EXPORTACION, "w") as f2:
+                f2.write("Lista de clientes:\n")
+                for row in reader:
+                    f2.write(f"- {row[0]} (instalado el {row[1]})\n")
+        await update.message.reply_text("✅ Archivo exportado correctamente.")
+        # También podrías enviar el archivo, pero por simplicidad solo aviso.
+        # Para enviar el archivo, usar: await update.message.reply_document(document=open(ARCHIVO_EXPORTACION, 'rb'))
+    except FileNotFoundError:
+        await update.message.reply_text("⚠ No hay clientes registrados todavía.")
 
-    await update.message.reply_text(f"✅ Tarea agregada con ID {nueva_tarea['id']}.")
-
-async def listar(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    tareas = cargar_tareas()
-    if not tareas:
-        await update.message.reply_text("⚠ No tienes tareas registradas.")
-        return
-
-    mensaje = "📋 Lista de tareas:\n"
-    for t in tareas:
-        mensaje += (
-            f"ID: {t['id']} | {t['tarea']} | Prioridad: {t['prioridad']} | "
-            f"Fecha límite: {t['fecha']} | Etiquetas: {t['etiquetas']}\n"
-        )
-    await update.message.reply_text(mensaje)
-
-async def eliminar(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not context.args:
-        await update.message.reply_text("⚠ Usa el formato: /eliminar ID")
-        return
-    id_eliminar = context.args[0]
-    tareas = cargar_tareas()
-    nuevas_tareas = [t for t in tareas if t["id"] != id_eliminar]
-    if len(nuevas_tareas) == len(tareas):
-        await update.message.reply_text(f"⚠ No se encontró tarea con ID {id_eliminar}.")
-        return
-    guardar_tareas(nuevas_tareas)
-    await update.message.reply_text(f"🗑 Tarea con ID {id_eliminar} eliminada.")
-
-async def actualizar(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    texto = update.message.text.partition(" ")[2].strip()
-    partes = [p.strip() for p in texto.split("|")]
-    if len(partes) != 3:
-        await update.message.reply_text(
-            "⚠ Usa el formato: /actualizar ID | campo | nuevo_valor\n"
-            "Campos válidos: tarea, prioridad, fecha, etiquetas"
-        )
-        return
-
-    id_tarea, campo, nuevo_valor = partes
-    campo = campo.lower()
-    if campo not in ["tarea", "prioridad", "fecha", "etiquetas"]:
-        await update.message.reply_text("⚠ Campo inválido. Usa: tarea, prioridad, fecha, etiquetas")
-        return
-
-    tareas = cargar_tareas()
-    tarea_encontrada = False
-
-    for t in tareas:
-        if t["id"] == id_tarea:
-            tarea_encontrada = True
-            if campo == "prioridad":
-                if nuevo_valor.lower() not in PRIORIDADES:
-                    await update.message.reply_text(f"⚠ Prioridad inválida. Usa: {', '.join(PRIORIDADES)}")
-                    return
-                t["prioridad"] = nuevo_valor.lower()
-            elif campo == "fecha":
-                try:
-                    datetime.datetime.strptime(nuevo_valor, "%Y-%m-%d")
-                    t["fecha"] = nuevo_valor
-                except ValueError:
-                    await update.message.reply_text("⚠ La fecha debe estar en formato YYYY-MM-DD")
-                    return
-            elif campo == "etiquetas":
-                nuevo_valor = nuevo_valor.replace(" ", "")
-                t["etiquetas"] = nuevo_valor
+async def revisar_cobros(app):
+    hoy = datetime.date.today()
+    dia_hoy = hoy.day
+    try:
+        with open(ARCHIVO_CLIENTES, "r") as f:
+            reader = csv.reader(f)
+            recordatorios = []
+            for row in reader:
+                nombre, fecha_str = row
+                fecha = datetime.datetime.strptime(fecha_str, "%Y-%m-%d").date()
+                if fecha.day == dia_hoy:
+                    recordatorios.append(f"💰 Cobro a {nombre} (instalado el {fecha_str})")
+            
+            # 🟢 Mensaje de verificación
+            mensaje = f"🔎 Verificación diaria realizada a las {datetime.datetime.now().strftime('%H:%M:%S')}.\n"
+            if recordatorios:
+                mensaje += "🔔 Cobros encontrados hoy:\n" + "\n".join(recordatorios)
             else:
-                t["tarea"] = nuevo_valor
-            break
+                mensaje += "✅ No hay cobros programados para hoy."
+            
+            await app.bot.send_message(chat_id=ADMIN_ID, text=mensaje)
 
-    if not tarea_encontrada:
-        await update.message.reply_text(f"⚠ No se encontró tarea con ID {id_tarea}.")
-        return
+    except FileNotFoundError:
+        await app.bot.send_message(chat_id=ADMIN_ID, text="⚠ No hay archivo de clientes para verificar cobros.")
 
-    guardar_tareas(tareas)
-    await update.message.reply_text(f"✅ Tarea con ID {id_tarea} actualizada.")
 
-import asyncio
-
-async def main():
+def main():
     app = ApplicationBuilder().token(TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
@@ -172,14 +161,21 @@ async def main():
     app.add_handler(CommandHandler("actualizar", actualizar))
     app.add_handler(CommandHandler("exportar", exportar))
 
-    # Programar la tarea diaria
-    schedule.every().day.at("16:10").do(lambda: asyncio.create_task(revisar_cobros(app)))
+    schedule.every().day.at("09:40").do(lambda: asyncio.create_task(revisar_cobros(app)))
 
-    # Lanzar scheduler y bot al mismo tiempo
-    asyncio.create_task(scheduler(app))
     print("✅ Bot funcionando. Esperando mensajes y tareas programadas...")
-    await app.run_polling()
+
+    loop = asyncio.get_event_loop()
+    try:
+        loop.create_task(app.run_polling())
+        loop.create_task(scheduler(app))
+        loop.run_forever()
+    except KeyboardInterrupt:
+        print("Bot detenido por usuario")
+    finally:
+        loop.run_until_complete(app.shutdown())
+        loop.close()
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()
 
