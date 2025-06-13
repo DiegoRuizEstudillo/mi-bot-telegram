@@ -173,7 +173,7 @@ async def main():
     app.add_handler(CommandHandler("exportar", exportar))
 
     # Programar la tarea diaria
-    schedule.every().day.at("09:40").do(lambda: asyncio.create_task(revisar_cobros(app)))
+    schedule.every().day.at("16:10").do(lambda: asyncio.create_task(revisar_cobros(app)))
 
     # Lanzar scheduler y bot al mismo tiempo
     asyncio.create_task(scheduler(app))
