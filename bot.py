@@ -159,18 +159,27 @@ async def actualizar(update: Update, context: ContextTypes.DEFAULT_TYPE):
     guardar_tareas(tareas)
     await update.message.reply_text(f"✅ Tarea con ID {id_tarea} actualizada.")
 
-def main():
+import asyncio
+
+async def main():
     app = ApplicationBuilder().token(TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("ayuda", ayuda))
     app.add_handler(CommandHandler("agregar", agregar))
-    app.add_handler(CommandHandler("listar", listar))
+    app.add_handler(CommandHandler("clientes", clientes))
     app.add_handler(CommandHandler("eliminar", eliminar))
     app.add_handler(CommandHandler("actualizar", actualizar))
+    app.add_handler(CommandHandler("exportar", exportar))
 
-    print("✅ Bot de gestión de tareas funcionando...")
-    app.run_polling()
+    # Programar la tarea diaria
+    schedule.every().day.at("09:40").do(lambda: asyncio.create_task(revisar_cobros(app)))
+
+    # Lanzar scheduler y bot al mismo tiempo
+    asyncio.create_task(scheduler(app))
+    print("✅ Bot funcionando. Esperando mensajes y tareas programadas...")
+    await app.run_polling()
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
+
